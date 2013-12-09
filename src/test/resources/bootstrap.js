@@ -4,7 +4,7 @@
 console.log("Bootstrapping...")
 
 /*
- * Stub-out timer methods used by Jasmine and not provided by Rhino.
+ * Stub-out timer methods used by Jasmine, RequireJs, etc.
  */
 
 function scalaJSStub(name) {
@@ -23,6 +23,7 @@ if (typeof setTimeout == 'undefined') {
 	var clearInterval = scalaJSStub('clearInterval');
 }
 
+// determine baseUrl (for searching files
 var baseUrl;
 
 try {
@@ -31,6 +32,7 @@ try {
 	baseUrl = "" + e.rhinoException.sourceName().replaceAll("/target/.+$", "")
 }
 
+// utility method to find files
 function findFileIn(path, file) {
 
 	var root = new java.io.File(path);
@@ -44,46 +46,29 @@ function findFileIn(path, file) {
 	for ( var i in list) {
 		var f = list[i];
 		var absolutePath = f.getAbsolutePath();
+
 		if (f.isDirectory()) {
 			foundFile = findFileIn(absolutePath, file);
 			if (foundFile)
 				break;
-		} else if (absolutePath.endsWith(file)) {
+		} else if (absolutePath.endsWith(file))
 			return "" + absolutePath;
-		}
 	}
 
 	return foundFile;
 }
 
-function handleError(url, e) {
-	console.log("error in " + url)
-	console.log(e)
-	console.log(e.stack)
-}
-
+// is used by requirejs to determine if the environment is useful
 importScripts = function(url) {
 	try {
 		var file = findFileIn(baseUrl, url);
 		var fileContents = java.util.Scanner(new java.io.File(file))
 				.useDelimiter('$').next();
-		eval.call(this, "try {\n " + fileContents
-				+ " \n} catch(e) { handleError('" + url + "', e); }");
+
+		// we need to turn the file contents into a javascript string, there
+		// seems no other way
+		eval.call(this, "" + fileContents);
 	} catch (e) {
-		console.log("Error on importScripts while loading " + url + ": " + e);
+		console.error("Error on importScripts while loading " + url + ": " + e);
 	}
-}
-
-require = {
-	deps : [ "test" ],
-	baseUrl : "",
-	shim : {
-		"jasmine" : {
-			exports : "jasmine"
-		}
-	}
-};
-
-require.onError = function() {
-	console.log("require error")
 }

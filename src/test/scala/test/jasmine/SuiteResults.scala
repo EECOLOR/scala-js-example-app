@@ -1,8 +1,8 @@
-package test
+package test.jasmine
 
 import scala.scalajs.js
 
-trait JasmineSuiteResults extends js.Object {
+trait SuiteResults extends js.Object {
 
   val passedCount: js.Number = ???
   val failedCount: js.Number = ???

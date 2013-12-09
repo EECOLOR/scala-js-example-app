@@ -7,27 +7,28 @@ import scala.scalajs.js.Any
 
 object Test extends ScalaJSTest {
 
-  describe("soep") {
-    it("blablabla") {
+  //global.____.generate_an_error
+  
+  describe("Part1") {
+    it("should show an exception") {
 
-      global.soep()
+      global.nonExistent()
 
-      //expect(true).toEqual(false)
       expect(true).toEqual(true)
     }
 
-    it("asdasd") {
+    it("should succeed") {
       expect(true).toEqual(true)
     }
   }
 
-  describe("soep2") {
-    it("blablabla2") {
+  describe("Part1") {
+    it("should show a failure") {
       expect(true).toEqual(false)
       expect(true).toEqual(true)
     }
 
-    it("asdasd2") {
+    it("should succeed") {
       expect(true).toEqual(true)
     }
   }

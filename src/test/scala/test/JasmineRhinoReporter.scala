@@ -3,48 +3,71 @@ package test
 import scala.scalajs.js
 import scala.scalajs.js.Dynamic
 import scala.scalajs.js.Dynamic.global
-import org.scalajs.dom._
-import scala.scalajs.js.Date
-import scala.scalajs.js.Undefined
-import java.util.NoSuchElementException
+import scala.scalajs.js.JavaScriptException
+
+import org.scalajs.dom.console
+
+import test.jasmine.ExpectationResult
+import test.jasmine.Result
+import test.jasmine.Spec
+import test.jasmine.Suite
+import test.sourceMaps.SourceMap
+import test.sourceMaps.SourceMaps
 
 /**
  * Console-oriented reporter for Rhino. Colorizes output based on the value of
  * the TERM env variable.
- *
- * Usage:
- *
- * jasmine.getEnv().addReporter(new jasmine.RhinoReporter());
- * jasmine.getEnv().execute();
  */
+case object JasmineTestFailed extends RuntimeException
+
 object JasmineRhinoReporter {
 
-  def withSourceMaps(code: js.Dynamic => Unit): Unit =
-    global.require(js.Array("source-map-consumer"), code)
+  def withSourceMapsAndJasmine(code: (SourceMaps, js.Dynamic) => Unit): Unit =
+    global.require(js.Array("source-map-consumer", "jasmine"), code)
 
-  def onStart(code: js.Function1[JasmineRhinoReporter, Unit]) =
-    withSourceMaps { sourceMaps =>
-   	  code(new JasmineRhinoReporter(sourceMaps))
+  def runTests(tests: js.Function0[Unit]) =
+    withSourceMapsAndJasmine { (sourceMaps, jasmine) =>
+
+      val reporter = new test.JasmineRhinoReporter(sourceMaps)
+
+      try {
+        tests()
+
+        val jasmineEnv = jasmine.getEnv()
+        jasmineEnv.addReporter(reporter.asInstanceOf[js.Any])
+        jasmineEnv.updateInterval = 0
+        jasmineEnv.execute()
+      } catch {
+        case JavaScriptException(exception) =>
+          reporter.error("Problem executing code in tests: " + exception)
+          reporter.displayStackTrace(exception.asInstanceOf[js.Dynamic].stack)
+          throw JasmineTestFailed
+      }
     }
 }
 
-class JasmineRhinoReporter(sourceMaps: Dynamic) {
+class JasmineRhinoReporter(sourceMaps: SourceMaps) {
 
-  var started: js.Number = _
-  var failCount: js.Number = 0
-  var executeCount: js.Number = 0
-  var passCount: js.Number = 0
-  var suite: JasmineSuite = _
+  private var started: js.Number = _
+  private var failCount: js.Number = 0
+  private var executeCount: js.Number = 0
+  private var passCount: js.Number = 0
+  private var currentSuite: Suite = _
 
-  def reportRunnerStarting(runner: JasmineRunner) = {
-    console.log("Report Runner Starting...")
+  def reportRunnerStarting() = {
+    print("Report Runner Starting...")
+    print("")
     started = now()
   }
 
-  def failure = withColor(Color.RED, "x")
-  def success = withColor(Color.GREEN, "+")
+  def reportSpecStarting(spec: Spec) = {
+    if (currentSuite != spec.suite) {
+      currentSuite = spec.suite
+      print(currentSuite.description);
+    }
+  }
 
-  def reportSpecResults(spec: JasmineSpec) = {
+  def reportSpecResults(spec: Spec) = {
 
     val results = spec.results()
     val description = spec.description
@@ -54,156 +77,130 @@ class JasmineRhinoReporter(sourceMaps: Dynamic) {
     else {
       error(s"  $failure $description")
 
-      results.getItems.foreach(displayResult)
+      results.getItems foreach displayResult
     }
   }
 
-  def readSourceMapFor(fileName: String): SourceMap = {
-    val json =
-      global.eval(s"java.util.Scanner( new java.io.File('$fileName.map') ).useDelimiter('$$').next()").toString
-    global.eval(s"(function() { return $json; })()").asInstanceOf[SourceMap]
-  }
-
-  trait SourceMap extends js.Object {
-    val mappings: js.String = ???
-  }
-
-  implicit class SourceMapWrapper(s: SourceMap) {
-    val mappings: String = s.mappings
-    val lines = mappings.split(";").map(Line)
-
-    case class Line(line: String) {
-      val entries = line.split(",")
-
-      lazy val firstColumn = {
-        val firstLetterOfLine = entries.head.head.toString
-        Base642.base64(firstLetterOfLine) >> 1
-      }
-    }
-  }
-
-  def getMessage(message: String) = {
-
-    val Pattern = """^(.+?) ([^ ]+\.js) \(line (\d+)\).*?$""".r
-    val StackTracePattern = """^(.+?) ([^ ]+\.js):(\d+).*?$""".r
-    val EvalPattern = """^(.+?) in eval.+\(eval\).+?\(line \d+\).*?$""".r
-
-    message match {
-      case StackTracePattern(originalMessage, fileName, lineNumber) =>
-
-        val map = readSourceMapFor(fileName)
-
-        val line = map.lines(lineNumber.toInt - 1)
-
-        val smc = Dynamic.newInstance(sourceMaps.SourceMapConsumer)(map)
-        val x = js.Dictionary(
-          "line" -> lineNumber.toInt,
-          "column" -> line.firstColumn)
-
-        val origPosition: js.Dictionary = smc.originalPositionFor(x)
-
-        val newLineNumber = origPosition("line")
-        val newSource = origPosition("source")
-        s"$originalMessage $newSource (line $newLineNumber)"
-      case EvalPattern(originalMessage) =>
-        originalMessage
-      case message =>
-        message
-    }
-  }
-
-  def displayResult(result: JasmineResultItem) = {
-    if (result.`type` == "log") {
-      print(s"    ${result.toString}");
-    } else if (result.`type` == "expect") {
-      if (!result.passed()) {
-        try {
-          val message = getMessage(result.message)
-
-          error(s"    $message")
-
-        } catch {
-          case t =>
-            console.log(t.toString)
-        }
-
-        if (!result.trace.stack.isInstanceOf[Undefined]) {
-          displayStackTrace(result.trace.stack.asInstanceOf[String])
-        }
-      }
-    }
-  }
-
-  def displayStackTrace(stack: String) =
-    stack.split("\n").takeWhile(!_.contains("at eval")).foreach { s =>
-      error(getMessage(s))
-    }
-
-  def reportSpecStarting = { spec: JasmineSpec =>
-    if (suite != spec.suite) {
-      suite = spec.suite
-      suite(suite.description);
-    }
-  }
-
-  def reportSuiteResults(suite: JasmineSuite) = {
+  def reportSuiteResults(suite: Suite) = {
     var results = suite.results();
     if (results.passedCount != results.totalCount)
       info(s"${results.failedCount} of ${results.totalCount} failed");
+
     passCount += results.passedCount
     failCount += results.failedCount
     executeCount += results.totalCount
     print("");
   }
 
-  def reportRunnerResults(runner: JasmineRunner) = {
+  def reportRunnerResults() = {
     val executionTime = (now() - started) / 1000
     val msg = s"$executeCount spec(s), $failCount failure(s) in $executionTime"
 
     if (failCount > 0) {
       error("Failed: " + msg)
-      throw new Error("tests_failed")
+      throw JasmineTestFailed
     } else print(msg)
   }
 
-  def log(str: js.String) = {
-    print(str);
-  }
+  private def now() = js.Date.now
 
-  def now() = Date.now
-
-  def suite(str: String) =
-    print(str)
-
-  def passed(str: String) =
-    print(withColor(Color.GREEN, str))
-
-  def failed(str: String) =
-    error(withColor(Color.RED, str))
-
-  def info(str: String) =
-    print(withColor(Color.BLUE, str))
-
-  def print(msg: String) =
+  private def print(msg: js.Any) =
     console.log(msg)
 
-  def error(msg: String) =
+  private def info(str: String) =
+    print(withColor(Color.BLUE, str))
+
+  private def error(msg: js.Any) =
     console.error(msg)
 
-  def withColor(color: String, message: String) =
+  private def withColor(color: String, message: String) =
     color + message + Color.RESET
-
-  def Color = getColors
 
   val ColorTerminals: Map[String, Colors] = Map("xterm" -> XtermColors)
 
-  def getColors = {
+  lazy val Color = {
     //concat with string, it's an object from the Rhino engine
     val term = "" + global.java.lang.System.getenv("TERM")
     ColorTerminals.get(term).getOrElse(NoColors)
   }
 
-  def displayMethod(method: String) = console.log(">>> " + global.eval(s"ScalaJS.modules.test_JasmineRhinoReporter().$method"))
+  private def sanitizeMessage(message: String) = {
+
+    val FilePattern = """^(.+?) ([^ ]+\.js) \(line (\d+)\).*?$""".r
+    val StackTracePattern = """^(.+?) ([^ ]+\.js):(\d+).*?$""".r
+    val EvalPattern = """^(.+?) in eval.+\(eval\).+?\(line \d+\).*?$""".r
+
+    message match {
+      case StackTracePattern(originalMessage, fileName, lineNumber) =>
+        val (newSource, newLineNumber) =
+          getSourceInfo(fileName, lineNumber.toInt)
+        s"$originalMessage $newSource (line $newLineNumber)"
+
+      case FilePattern(originalMessage, fileName, lineNumber) =>
+        val (newSource, newLineNumber) =
+          getSourceInfo(fileName, lineNumber.toInt)
+        s"$originalMessage $newSource (line $newLineNumber)"
+
+      case EvalPattern(originalMessage) => originalMessage
+      case message => message
+    }
+  }
+
+  private def getSourceInfo(fileName: String, lineNumber: Int) = {
+
+    val sourceMap = SourceMap forFile fileName
+
+    val smc = sourceMaps.createConsumer(sourceMap)
+    val line = sourceMap.lines(lineNumber - 1)
+
+    val generatedPosition =
+      js.Dictionary(
+        "line" -> lineNumber.toInt,
+        "column" -> line.firstColumn)
+
+    val originalPosition =
+      smc.originalPositionFor(generatedPosition)
+
+    (originalPosition("source"), originalPosition("line"))
+  }
+
+  private def failure = withColor(Color.RED, "x")
+  private def success = withColor(Color.GREEN, "+")
+
+  private def displayResult(result: Result) =
+    result match {
+      case r if (r.`type` == "log") =>
+        print(s"    ${r.toString}");
+      case r if (r.`type` == "expect") =>
+        val result = r.asInstanceOf[ExpectationResult]
+        if (!result.passed()) {
+
+          val message = sanitizeMessage(result.message)
+          error(s"    $message")
+
+          displayStackTrace(result.trace.stack)
+        }
+    }
+
+  private def displayStackTrace(stack: js.Any) =
+    if (stack.isInstanceOf[js.String]) {
+      try {
+
+        val stackString = stack.asInstanceOf[String]
+        val stackElements = stackString.split("\n")
+        val interestingElements =
+          stackElements.takeWhile(!_.contains("at eval"))
+
+        interestingElements.foreach { s =>
+          error(sanitizeMessage(s))
+        }
+      } catch {
+        case JavaScriptException(exception) =>
+          error("Failed to sanitize stack trace")
+          error(exception)
+          error(exception.asInstanceOf[Dynamic].stack)
+      }
+    }
 
 }
 
