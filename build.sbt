@@ -15,15 +15,21 @@ libraryDependencies += "org.scala-lang.modules.scalajs" %% "scalajs-jquery" % "0
 
 libraryDependencies += "org.webjars" % "jasmine" % "1.3.1" % "test"
 
+libraryDependencies += "org.webjars" % "requirejs" % "2.1.8" % "test"
+
 sources in (Test, Keys.test) ~= { srcs =>
-  srcs.filterNot(_.name == "jasmine-html.js")
+  srcs.filter {file =>
+    val pattern = """\d+-[^/]+\.js"""
+    file.name.matches(pattern) ||
+    file.name == "scalajs-corejslib.js" ||
+  	file.name == "require.js" || file.name == "bootstrap.js"
+  }
 }
 
 // And a hack to make sure bootstrap.js is included before jasmine.js
 sources in (Test, Keys.test) ~= { srcs =>
   val bootstrap: File = srcs.find(_.name == "bootstrap.js").get
-  val main: File = srcs.find(_.name == "main.js").get
-  val (before, after) =
-    srcs.filterNot(file => file == bootstrap || file == main).span(_.name != "jasmine.js")
-  before ++ Seq(bootstrap) ++ after ++ Seq(main)
+  val requirejs: File = srcs.find(_.name == "require.js").get
+  val others = srcs.filterNot(file => file == bootstrap || file == requirejs)
+  others :+ bootstrap :+ requirejs
 }

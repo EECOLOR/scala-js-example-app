@@ -9,5 +9,7 @@ trait JasmineResultItem extends js.Object {
   def passed(): js.Boolean = ???
   val message: js.String = ???
   val trace: js.Dynamic = ???
+  val fileName:js.String = ???
+  val lineNumber:js.Number = ???
   val e: js.Dynamic = ???
 }

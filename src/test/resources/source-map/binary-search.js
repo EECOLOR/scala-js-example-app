@@ -4,8 +4,10 @@
  * Licensed under the New BSD license. See LICENSE or:
  * http://opensource.org/licenses/BSD-3-Clause
  */
-var binarySearch = {};
-(function (exports) {
+if (typeof define !== 'function') {
+    var define = require('amdefine')(module, require);
+}
+define(function (require, exports, module) {
 
   /**
    * Recursive implementation of binary search.
@@ -76,4 +78,4 @@ var binarySearch = {};
       : null;
   };
 
-})(binarySearch);
+});

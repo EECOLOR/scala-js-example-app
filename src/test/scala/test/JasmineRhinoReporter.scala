@@ -19,9 +19,16 @@ import java.util.NoSuchElementException
  */
 object JasmineRhinoReporter {
 
-  if (!global.jasmine) {
-    throw new Exception("jasmine library does not exist in global namespace!");
-  }
+  def withSourceMaps(code: js.Dynamic => Unit): Unit =
+    global.require(js.Array("source-map-consumer"), code)
+
+  def onStart(code: js.Function1[JasmineRhinoReporter, Unit]) =
+    withSourceMaps { sourceMaps =>
+   	  code(new JasmineRhinoReporter(sourceMaps))
+    }
+}
+
+class JasmineRhinoReporter(sourceMaps: Dynamic) {
 
   var started: js.Number = _
   var failCount: js.Number = 0
@@ -75,38 +82,45 @@ object JasmineRhinoReporter {
     }
   }
 
+  def getMessage(message: String) = {
+
+    val Pattern = """^(.+?) ([^ ]+\.js) \(line (\d+)\).*?$""".r
+    val StackTracePattern = """^(.+?) ([^ ]+\.js):(\d+).*?$""".r
+    val EvalPattern = """^(.+?) in eval.+\(eval\).+?\(line \d+\).*?$""".r
+
+    message match {
+      case StackTracePattern(originalMessage, fileName, lineNumber) =>
+
+        val map = readSourceMapFor(fileName)
+
+        val line = map.lines(lineNumber.toInt - 1)
+
+        val smc = Dynamic.newInstance(sourceMaps.SourceMapConsumer)(map)
+        val x = js.Dictionary(
+          "line" -> lineNumber.toInt,
+          "column" -> line.firstColumn)
+
+        val origPosition: js.Dictionary = smc.originalPositionFor(x)
+
+        val newLineNumber = origPosition("line")
+        val newSource = origPosition("source")
+        s"$originalMessage $newSource (line $newLineNumber)"
+      case EvalPattern(originalMessage) =>
+        originalMessage
+      case message =>
+        message
+    }
+  }
+
   def displayResult(result: JasmineResultItem) = {
     if (result.`type` == "log") {
       print(s"    ${result.toString}");
     } else if (result.`type` == "expect") {
       if (!result.passed()) {
         try {
-          val message = result.message
+          val message = getMessage(result.message)
 
-          val Pattern = """^(.+?) in ([^ ]+\.js) \(line (\d+)\)$""".r
-
-          message match {
-            case Pattern(originalMessage, fileName, lineNumber) =>
-
-              val map = readSourceMapFor(fileName)
-
-              val line = map.lines(lineNumber.toInt - 1)
-
-              val smc = Dynamic.newInstance(global.SourceMapConsumer)(map)
-              val x = js.Dictionary(
-                "line" -> lineNumber.toInt,
-                "column" -> line.firstColumn)
-
-              val origPosition: js.Dictionary = smc.originalPositionFor(x)
-
-              val newLineNumber = origPosition("line")
-              val newSource = origPosition("source")
-              val newMessage = s"$originalMessage \n    in $newSource (line $newLineNumber)"
-
-              error(s"    $newMessage")
-            case message =>
-              error(s"    $message")
-          }
+          error(s"    $message")
 
         } catch {
           case t =>
@@ -114,11 +128,16 @@ object JasmineRhinoReporter {
         }
 
         if (!result.trace.stack.isInstanceOf[Undefined]) {
-          //error(result.trace.stack.asInstanceOf[String])
+          displayStackTrace(result.trace.stack.asInstanceOf[String])
         }
       }
     }
   }
+
+  def displayStackTrace(stack: String) =
+    stack.split("\n").takeWhile(!_.contains("at eval")).foreach { s =>
+      error(getMessage(s))
+    }
 
   def reportSpecStarting = { spec: JasmineSpec =>
     if (suite != spec.suite) {
@@ -143,9 +162,8 @@ object JasmineRhinoReporter {
 
     if (failCount > 0) {
       error("Failed: " + msg)
-      throw new Error("soep")
-    }
-    else print(msg)
+      throw new Error("tests_failed")
+    } else print(msg)
   }
 
   def log(str: js.String) = {
@@ -186,6 +204,7 @@ object JasmineRhinoReporter {
   }
 
   def displayMethod(method: String) = console.log(">>> " + global.eval(s"ScalaJS.modules.test_JasmineRhinoReporter().$method"))
+
 }
 
 trait Colors {

@@ -4,10 +4,10 @@
  * Licensed under the New BSD license. See LICENSE or:
  * http://opensource.org/licenses/BSD-3-Clause
  */
-
-var base64 = {};
-
-(function (exports) {
+if (typeof define !== 'function') {
+    var define = require('amdefine')(module, require);
+}
+define(function (require, exports, module) {
 
   var charToIntMap = {};
   var intToCharMap = {};
@@ -39,4 +39,4 @@ var base64 = {};
     throw new TypeError("Not a valid base 64 digit: " + aChar);
   };
 
-})(base64);
+});

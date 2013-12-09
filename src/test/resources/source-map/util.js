@@ -4,13 +4,11 @@
  * Licensed under the New BSD license. See LICENSE or:
  * http://opensource.org/licenses/BSD-3-Clause
  */
+if (typeof define !== 'function') {
+    var define = require('amdefine')(module, require);
+}
+define(function (require, exports, module) {
 
-var util = {};
-
-(function (exports) {
-
-	console.log("running util");
-	
   /**
    * This is a helper function for getting values from parameter/options
    * objects.
@@ -203,4 +201,5 @@ var util = {};
     return strcmp(mappingA.name, mappingB.name);
   };
   exports.compareByGeneratedPositions = compareByGeneratedPositions;
-})(util);
+
+});
